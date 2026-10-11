@@ -1,0 +1,11 @@
+.gradle/
+**/build/
+tools/gradle-home/
+tools/release.jks
+tools/test-classes/
+tools/android-home/
+tools/*.log
+tools/phone-ui.xml
+local.properties
+sdk/
+gist.json

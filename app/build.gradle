@@ -1,0 +1,16 @@
+plugins { id 'com.android.application' }
+android {
+    namespace 'org.heycyan.live'
+    compileSdk 35
+    defaultConfig { applicationId 'org.heycyan.live'; minSdk 29; targetSdk 35; versionCode 1; versionName '1.0' }
+    compileOptions { sourceCompatibility JavaVersion.VERSION_17; targetCompatibility JavaVersion.VERSION_17 }
+    signingConfigs { release { storeFile file('../tools/release.jks'); storePassword 'heycyan-local'; keyAlias 'heycyan'; keyPassword 'heycyan-local' } }
+    buildTypes { release { minifyEnabled false; signingConfig signingConfigs.release } }
+}
+dependencies {
+    implementation files('libs/glasses_sdk_20250723_v01.aar')
+    implementation 'androidx.localbroadcastmanager:localbroadcastmanager:1.1.0'
+    implementation 'androidx.core:core:1.15.0'
+    implementation 'com.google.code.gson:gson:2.10.1'
+    implementation 'org.greenrobot:eventbus:3.3.1'
+}
