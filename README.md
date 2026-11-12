@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 # HeyCyan Live
 
 Android app using the HeyCyan SDK and the live-preview commands documented in
@@ -66,3 +67,7 @@ App diagnostics use Android log tag `HeyCyanLive`. Failures stop capture and
 release resources; the app retains an accessible error message. Stop sends
 `02 01 15 01` and removes the Wi-Fi Direct group. Start sends `02 01 14 01`, and
 the service sends `syncHeartBeat(4)` every five seconds.
+=======
+# heycyan_live_stream
+Android app using the HeyCyan SDK and the live-preview commands to render live snapshot stream on same device using http://127.0.0.1:8080/mjpeg - yes, I vibe-coded this using codex CLI
+>>>>>>> 6bd3b5e7013f1ec640fa4755d299a39249c81c80

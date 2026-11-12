@@ -1,0 +1,18 @@
+  > Please add a GET /snapshot endpoint to the Android app’s existing HTTP server on port 8080.                                                                               
+  > Preserve the existing /mjpeg endpoint and its behaviour. The primary software consuming that stream must continue working, including while snapshot requests are being    
+  > handled.                                                                                                                                                                  
+  > Requirements:                                                                                                                                                             
+  > • Return the latest complete JPEG frame with Content-Type: image/jpeg. Reuse the frames already received for streaming; do not open another glasses connection, restart   
+  >   capture, or consume frames from the MJPEG client.                                                                                                                       
+  > • Make access to the latest frame thread-safe. A snapshot request must not interrupt or block streaming.                                                                  
+  > • Return HTTP 503 with a clear message if no frame is available.                                                                                                          
+  > • Set Cache-Control: no-store.                                                                                                                                            
+  > • Allow browser JavaScript from https://blindza.com and development origin http://localhost to read the snapshot using CORS. Return the matching allowed origin in Access-
+  >   Control-Allow-Origin, with Vary: Origin. Handle OPTIONS requests if needed. Browser capture needs this permission in addition to the endpoint itself.                   
+  > • Keep the change as small as possible and avoid unrelated refactoring or changes to Android permissions and build dependencies unless required.                                         
+  > Explain the proposed changes, implement them, and build the APK.                                           
+  >                                                                                                                                                                           
+  > If possible, verify that /snapshot returns a valid JPEG, repeated snapshot requests work while the primary client continues consuming /mjpeg, and browser JavaScript from an allowed   
+  > origin can fetch the image. Clearly distinguish checks actually performed from checks that still require the handset.                                                     
+  > The essential detail is “reuse the latest complete frame”: that lets the new endpoint serve a copy without disturbing the existing stream.                                  
+ 
