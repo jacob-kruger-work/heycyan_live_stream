@@ -6,6 +6,7 @@ import java.io.*;
 import java.net.*;
 import java.nio.charset.StandardCharsets;
 import java.util.*;
+import java.util.concurrent.*;
 
 public final class MjpegServerTest {
  static void check(boolean value,String message) { if(!value) throw new AssertionError(message); }
@@ -85,8 +86,78 @@ public final class MjpegServerTest {
   }
   public void close() throws IOException { socket.close(); }
  }
+ static final class Response {
+  String status;
+  final Map<String,String> headers=new HashMap<>();
+  byte[] body;
+ }
+ static Response snapshot(int port,String method,String headers) throws IOException {
+  try(Socket socket=new Socket("127.0.0.1",port)) {
+   socket.setSoTimeout(2000);
+   socket.getOutputStream().write((method+" /snapshot HTTP/1.1\r\nHost: localhost\r\n"+headers+"\r\n").getBytes(StandardCharsets.US_ASCII));
+   InputStream input=socket.getInputStream(); Response response=new Response(); response.status=line(input);
+   String header;
+   while(!(header=line(input)).isEmpty()) { int colon=header.indexOf(':'); response.headers.put(header.substring(0,colon).toLowerCase(Locale.US),header.substring(colon+1).trim()); }
+   int length=Integer.parseInt(response.headers.get("content-length")); response.body=input.readNBytes(length);
+   check(response.body.length==length,"Snapshot complete Content-Length");
+   check(input.read()==-1,"Snapshot response closes its own connection");
+   check("no-store".equals(response.headers.get("cache-control")),"Snapshot never cached");
+   check("Origin".equals(response.headers.get("vary")),"Snapshot CORS varies by origin");
+   return response;
+  }
+ }
+ static void snapshots(byte[] first,byte[] second) throws Exception {
+  try(MjpegServer server=new MjpegServer(0); Client primary=new Client(server.port()); Client other=new Client(server.port())) {
+   Response empty=snapshot(server.port(),"GET","Origin: https://blindza.com\r\n");
+   check(empty.status.equals("HTTP/1.1 503 Service Unavailable"),"Snapshot before first frame returns 503 immediately");
+   check(new String(empty.body,StandardCharsets.UTF_8).contains("No frame available"),"503 explains missing frame");
+   check("https://blindza.com".equals(empty.headers.get("access-control-allow-origin")),"Allowed browser can read 503");
+   primary.idle(); other.idle();
+   for(String origin:new String[]{"https://blindza.com","http://localhost"}) {
+    Response options=snapshot(server.port(),"OPTIONS","Origin: "+origin+"\r\nAccess-Control-Request-Method: GET\r\nAccess-Control-Request-Headers: content-type\r\nAccess-Control-Request-Private-Network: true\r\n");
+    check(options.status.equals("HTTP/1.1 204 No Content") && options.body.length==0,"Preflight succeeds without a frame");
+    check(origin.equals(options.headers.get("access-control-allow-origin")),"Preflight reflects exact allowed origin");
+    check(options.headers.get("access-control-allow-methods").contains("GET"),"Preflight permits GET");
+    check("Content-Type".equals(options.headers.get("access-control-allow-headers")),"Preflight permits requested content type");
+    check("true".equals(options.headers.get("access-control-allow-private-network")),"Allowed private-network preflight");
+   }
+   BlockingQueue<Integer> consumed=new LinkedBlockingQueue<>();
+   CompletableFuture<Void> reading=CompletableFuture.runAsync(()->{
+    try {
+     for(int sequence=1;sequence<=12;sequence++) {
+      byte[] expected=sequence%2==0?second:first; String name="frame-"+sequence+".jpg";
+      check(Arrays.equals(primary.frame(sequence,name),expected),"Primary MJPEG receives each new frame during snapshot requests");
+      check(Arrays.equals(other.frame(sequence,name),expected),"Second MJPEG consumer is unaffected");
+      consumed.add(sequence);
+     }
+    } catch(IOException e) { throw new UncheckedIOException(e); }
+   });
+   for(int sequence=1;sequence<=12;sequence++) {
+    byte[] expected=sequence%2==0?second:first; String name="frame-"+sequence+".jpg";
+    byte[] offered=expected.clone(); server.publish(offered,name); Arrays.fill(offered,(byte)0);
+    for(String origin:new String[]{"https://blindza.com","http://localhost","https://blindza.com.evil.test",""}) {
+     Response response=snapshot(server.port(),"GET",origin.isEmpty()?"":"oRiGiN: "+origin+"\r\n");
+     check(response.status.equals("HTTP/1.1 200 OK"),"Snapshot GET succeeds repeatedly");
+     check("image/jpeg".equals(response.headers.get("content-type")),"Snapshot JPEG MIME type");
+     check(Arrays.equals(response.body,expected),"Snapshot reuses latest immutable complete JPEG");
+     check(ImageIO.read(new ByteArrayInputStream(response.body))!=null,"Snapshot is a valid decodable JPEG");
+     if(origin.equals("https://blindza.com") || origin.equals("http://localhost")) check(origin.equals(response.headers.get("access-control-allow-origin")),"GET permits exact allowed origin");
+     else check(!response.headers.containsKey("access-control-allow-origin"),"Other origins receive no CORS permission");
+    }
+    Integer delivered=consumed.poll(2,TimeUnit.SECONDS);
+    check(delivered!=null && delivered==sequence,"Concurrent consumers continue receiving during repeated snapshot requests");
+   }
+   reading.get(2,TimeUnit.SECONDS);
+   primary.idle(); other.idle();
+   Response denied=snapshot(server.port(),"OPTIONS","Origin: https://example.com\r\nAccess-Control-Request-Private-Network: true\r\n");
+   check(!denied.headers.containsKey("access-control-allow-origin") && !denied.headers.containsKey("access-control-allow-private-network"),"Disallowed preflight grants no browser access");
+   server.close(); check(primary.input.read()==-1,"Stop closes stream after snapshot traffic");
+  }
+  System.out.println("PASS: snapshot 503, valid latest JPEG, repeated requests alongside two MJPEG clients, exact CORS origins and OPTIONS/private-network preflight");
+ }
  public static void main(String[] args) throws Exception {
   byte[] first=jpeg(0xff0000),second=jpeg(0x00ff00);
+  snapshots(first,second);
   MjpegServer server=new MjpegServer(0); int port=server.port();
   try(Client a=new Client(port); Client b=new Client(port)) {
    a.idle(); b.idle(); // Header alone cannot fabricate an initial frame.

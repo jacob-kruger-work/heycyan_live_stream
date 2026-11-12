@@ -1,4 +1,4 @@
-<<<<<<< HEAD
+﻿<<<<<<< HEAD
 # HeyCyan Live
 
 Android app using the HeyCyan SDK and the live-preview commands documented in
@@ -13,6 +13,7 @@ requests precise Location because Wi-Fi Direct discovery can require it.
 The foreground service continues after pressing Home. Its notification includes
 **Stop live stream**. The local endpoint is `http://127.0.0.1:8080/mjpeg`.
 Only apps on this handset can access it. The consumer must allow local HTTP.
+One additional end-point is now also `http://127.0.0.1:8080/snapshot` - it just returns the last captured snapshot as a completely static image, or a 503 if no image has yet been captured.
 
 The decoder handles RTSP/TCP H.264, including in-band SPS/PPS, single NAL units,
 STAP-A and FU-A. It publishes at most one fresh JPEG per second, resized to

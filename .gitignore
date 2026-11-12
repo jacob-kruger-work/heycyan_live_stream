@@ -9,3 +9,4 @@ tools/phone-ui.xml
 local.properties
 sdk/
 gist.json
+dist/heycyan_live_before_snapshot.apk

@@ -60,14 +60,47 @@ final class MjpegServer implements Closeable {
   while(header.size()<8192) {
    int b=input.read(); if(b<0) throw new EOFException("Incomplete HTTP request");
    header.write(b); tail=(tail<<8)|(b&255);
-   if(tail==0x0d0a0d0a) return header.toString(StandardCharsets.US_ASCII.name()).split("\r\n",2)[0];
+   if(tail==0x0d0a0d0a) return header.toString(StandardCharsets.US_ASCII.name());
   }
   throw new IOException("HTTP headers too large");
  }
+ private static String header(String request,String name) {
+  for(String line:request.split("\r\n")) {
+   int colon=line.indexOf(':');
+   if(colon>0 && line.substring(0,colon).equalsIgnoreCase(name)) return line.substring(colon+1).trim();
+  }
+  return "";
+ }
+ private void snapshot(OutputStream out,String request,boolean options) throws IOException {
+  String origin=header(request,"Origin");
+  boolean allowed=origin.equals("https://blindza.com") || origin.equals("http://localhost");
+  String cors="Vary: Origin\r\n";
+  if(allowed) {
+   cors+="Access-Control-Allow-Origin: "+origin+"\r\n";
+   if(options) {
+    cors+="Access-Control-Allow-Methods: GET, OPTIONS\r\nAccess-Control-Allow-Headers: Content-Type\r\n";
+    if(header(request,"Access-Control-Request-Private-Network").equalsIgnoreCase("true")) cors+="Access-Control-Allow-Private-Network: true\r\n";
+   }
+  }
+  Frame frame;
+  // Published frames are immutable. Hold the shared lock only to take a reference;
+  // all network writes happen outside it, independently of each MJPEG consumer.
+  synchronized(frames) { frame=latest; }
+  byte[] body=options ? new byte[0] : frame==null ? "No frame available yet. Start the live stream and wait for its first frame.\n".getBytes(StandardCharsets.UTF_8) : frame.jpeg;
+  String status=options ? "204 No Content" : frame==null ? "503 Service Unavailable" : "200 OK";
+  String type=options ? "" : "Content-Type: "+(frame==null ? "text/plain; charset=utf-8" : "image/jpeg")+"\r\n";
+  out.write(("HTTP/1.1 "+status+"\r\n"+type+"Content-Length: "+body.length+"\r\nCache-Control: no-store\r\n"+cors+
+   "Connection: close\r\nX-Content-Type-Options: nosniff\r\n\r\n").getBytes(StandardCharsets.US_ASCII));
+  out.write(body); out.flush();
+ }
  private void serve(Socket socket) {
   try(socket) {
-   String[] line=request(socket.getInputStream()).split(" ");
+   String request=request(socket.getInputStream());
+   String[] line=request.split("\r\n",2)[0].split(" ");
    OutputStream out=socket.getOutputStream();
+   if(line.length==3 && line[1].equals("/snapshot") && line[2].startsWith("HTTP/1.") && (line[0].equals("GET") || line[0].equals("OPTIONS"))) {
+    snapshot(out,request,line[0].equals("OPTIONS")); return;
+   }
    boolean compatibility=line.length==3 && line[1].equals("/mjpeg-compatible");
    if(line.length!=3 || !line[0].equals("GET") || (!line[1].equals("/mjpeg") && !compatibility) || !line[2].startsWith("HTTP/1.")) {
     out.write("HTTP/1.1 404 Not Found\r\nContent-Length: 0\r\nConnection: close\r\n\r\n".getBytes(StandardCharsets.US_ASCII)); out.flush(); return;
